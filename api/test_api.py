@@ -105,7 +105,56 @@ class TestApi(unittest.TestCase):
         self.assertEqual(odp.status_code, 200)
         self.assertEqual(len(odp.json()["value"]), 7)
 
-
+        # ===== Testy 2. Pobieranie po kluczu i dodawanie (dzień 3) =====
+    def test_pobranie_po_kluczu(self):
+        self.zaloguj()
+        odp = self.klient.get("/b1s/v1/BusinessPartners('C003')")
+        self.assertEqual(odp.status_code, 200)
+        self.assertEqual(odp.json()["CardCode"], "C003")
+    def test_pobranie_zamowienia_po_numerze(self):
+        self.zaloguj()
+        odp = self.klient.get("/b1s/v1/Orders(1)")
+        self.assertEqual(odp.status_code, 200)
+        self.assertEqual(odp.json()["DocEntry"], 1)
+    def test_brak_rekordu_to_404(self):
+        self.zaloguj()
+        odp = self.klient.get("/b1s/v1/BusinessPartners('NIE_MA')")
+        self.assertEqual(odp.status_code, 404)
+        self.assertEqual(odp.json()["error"]["code"], -2028)
+    def test_dodanie_klienta(self):
+        self.zaloguj()
+        nowy = {"CardCode": "C100", "CardName": "Nowy Sp. z o.o.", "City": "Łódź",
+        "FederalTaxID": "1234563218", "EmailAddress": "biuro@nowy.example"}
+        odp = self.klient.post("/b1s/v1/BusinessPartners", json=nowy)
+        self.assertEqual(odp.status_code, 201)
+        self.assertEqual(odp.json()["CardName"], "Nowy Sp. z o.o.")
+        odp = self.klient.get("/b1s/v1/BusinessPartners('C100')")
+        self.assertEqual(odp.json()["City"], "Łódź")
+    def test_duplikat_klucza_to_blad_2035(self):
+        self.zaloguj()
+        odp = self.klient.post("/b1s/v1/BusinessPartners",
+        json={"CardCode": "C001", "CardName": "Duplikat"})
+        self.assertEqual(odp.status_code, 400)
+        self.assertEqual(odp.json()["error"]["code"], -2035)
+    def test_brak_wymaganego_pola(self):
+        self.zaloguj()
+        odp = self.klient.post("/b1s/v1/BusinessPartners", json={"CardCode": "C101"})
+        self.assertEqual(odp.status_code, 400)
+    def test_za_dlugi_kod(self):
+        self.zaloguj()
+        odp = self.klient.post("/b1s/v1/BusinessPartners",
+        json={"CardCode": "C" * 16, "CardName": "X"})
+        self.assertEqual(odp.status_code, 400)
+    def test_nieznane_pole_w_body(self):
+        self.zaloguj()
+        odp = self.klient.post("/b1s/v1/BusinessPartners",
+        json={"CardCode": "C102", "CardName": "X", "Foo": 1})
+        self.assertEqual(odp.status_code, 400)
+    def test_zamowien_nie_mozna_dodawac(self):
+        self.zaloguj()
+        odp = self.klient.post("/b1s/v1/Orders", json={"CardCode": "C001"})
+        self.assertEqual(odp.status_code, 405)
+        
 if __name__ == "__main__":
     unittest.main()
 

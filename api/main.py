@@ -154,6 +154,27 @@ def pobierz_liste(nazwa, top, skip, filtr, select):
     finally:
         conn.close()
     return wynik
+# ===== 5. Trasa: pobieranie jednego rekordu po kluczu (GET) =====
+def pobierz_jeden(nazwa, klucz):
+    konf = pobierz_encje(nazwa)
+    kolumny = ", ".join("%s AS %s" % (kol, p) for p, kol in konf["pola"].items())
+    sql = "SELECT %s FROM %s WHERE %s = ?" % (
+    kolumny, konf["tabela"], konf["pola"][konf["klucz"]])
+    conn = baza.polacz()
+    try:
+        wiersz = conn.execute(sql, (klucz,)).fetchone()
+        if wiersz is None:
+            raise BladB1(404, -2028, "No matching records found (ODBC -2028)")
+        rekord = dict(wiersz)
+        if konf.get("linie"):
+            dolacz_linie(conn, rekord)
+    finally:
+        conn.close()
+    return rekord
+    # Adres w stylu Service Layer: /b1s/v1/BusinessPartners('C001') lub Orders(5)
+@app.get("/b1s/v1/{encja}({klucz})", dependencies=[Depends(wymagaj_sesji)])
+def jeden(encja: str, klucz: str):
+    return pobierz_jeden(encja, klucz.strip("'"))
 # ===== 6. Trasa: lista rekordów (GET) =====
 @app.get("/b1s/v1/{encja}", dependencies=[Depends(wymagaj_sesji)])
 def lista(encja: str,
@@ -162,3 +183,37 @@ def lista(encja: str,
           filtr: Optional[str] = Query(None, alias="$filter"),
           select: Optional[str] = Query(None, alias="$select")):
     return {"value": pobierz_liste(encja, top, skip, filtr, select)}
+# ===== 7. Trasa: dodawanie rekordu (POST) =====
+def dodaj_rekord(nazwa, dane):
+    konf = pobierz_encje(nazwa)
+    if not konf["zapis"]:
+        raise BladB1(405, -1, "Method not allowed for '%s'" % nazwa)
+    for pole, wartosc in dane.items():
+        if pole not in konf["pola"]:
+            raise BladB1(400, -1, "Property '%s' of entity '%s' has invalid name"
+    % (pole, nazwa))
+    if not isinstance(wartosc, (str, int, float)):
+        raise BladB1(400, -1, "Property '%s' has invalid value type" % pole)
+    for pole in konf["wymagane"]:
+        if not str(dane.get(pole, "")).strip():
+            raise BladB1(400, -1, "Property '%s' is required" % pole)
+    for pole, maksimum in konf["dlugosci"].items():
+        if len(str(dane.get(pole, ""))) > maksimum:
+            raise BladB1(400, -1, "Property '%s' is too long (max %d)" % (pole, maksimum))
+    kolumny = [konf["pola"][p] for p in dane]
+    sql = "INSERT INTO %s (%s) VALUES (%s)" % (
+    konf["tabela"], ", ".join(kolumny), ", ".join(["?"] * len(kolumny)))
+    conn = baza.polacz()
+    try:
+        conn.execute(sql, list(dane.values()))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        raise BladB1(400, -2035,
+    "This entry already exists in the following tables (ODBC -2035)")
+    finally:
+        conn.close()
+    return pobierz_jeden(nazwa, str(dane[konf["klucz"]]))
+@app.post("/b1s/v1/{encja}", status_code=201, dependencies=[Depends(wymagaj_sesji)])
+def dodaj(encja: str, dane: dict = Body(...)):
+    return dodaj_rekord(encja, dane)
+
