@@ -82,3 +82,4 @@ def waliduj_plik(wiersze):
             wiersz["_nr"] = nr
             poprawne.append(wiersz)
     return poprawne, bledy
+
